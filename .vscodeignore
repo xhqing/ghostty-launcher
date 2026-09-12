@@ -1,0 +1,13 @@
+# 打包产物与临时目录
+tmp/**
+*.vsix
+
+# 源 README（vsix 内用 --readme-path 指定的中转版，避免同名大小写冲突与 SVG 限制）
+README.md
+README_cn.md
+
+# 仓库管理文件，不需要进 vsix
+.claude/**
+CLAUDE.md
+.commit-cache.md
+.gitignore

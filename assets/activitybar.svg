@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" role="img" aria-label="Ghostty">
+  <!-- Monochrome ghost glyph (VSCode activity bar: single color, currentColor, rounded-only shapes) -->
+  <path fill="currentColor" fill-rule="evenodd"
+    d="M5 11 A7 7 0 0 1 19 11 V19 a2.3334 2.3334 0 0 1 -4.6667 0 a2.3334 2.3334 0 0 1 -4.6667 0 a2.3334 2.3334 0 0 1 -4.6666 0 Z
+       M7.7 10.2 a1.7 1.7 0 1 0 3.4 0 a1.7 1.7 0 1 0 -3.4 0 Z
+       M12.9 10.2 a1.7 1.7 0 1 0 3.4 0 a1.7 1.7 0 1 0 -3.4 0 Z"/>
+</svg>

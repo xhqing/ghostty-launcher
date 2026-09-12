@@ -1,10 +1,14 @@
 {
   "name": "ghostty-launcher",
   "displayName": "Ghostty Launcher",
-  "description": "Status bar button to summon Ghostty terminal: activate existing window, or open a new window in the current workspace directory.",
+  "description": "Summon the external Ghostty terminal from VSCode: status bar button, plus an Activity Bar panel with a New Window button and a live list of open Ghostty windows.",
   "version": "0.1.0",
   "publisher": "xhqing",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xhqing/ghostty-launcher.git"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -25,6 +29,24 @@
         "command": "ghosttyLauncher.newWindow",
         "title": "Ghostty: New Terminal Window (in workspace)"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ghostty",
+          "title": "Ghostty",
+          "icon": "assets/activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "ghostty": [
+        {
+          "type": "webview",
+          "id": "ghosttyLauncher.windows",
+          "name": "Ghostty"
+        }
+      ]
+    }
   }
 }

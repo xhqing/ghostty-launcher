@@ -10,7 +10,7 @@ ghostty-launcher 是一个 VSCode 状态栏扩展：点击 👻 按钮一键唤�
 
 > 以下为 **FullStackEngineerAgent（Atlas）** 项目 `.claude/CLAUDE.md` 的全文，按超集关系随附于本子项目——本文件（ghostty-launcher `.claude/CLAUDE.md`）中「本项目」均指 **FullStackEngineerAgent**，其中的「子项目」指 zcode-cli、zcode-vsce、ghostty-launcher 等由 Atlas 负责的项目。
 
-> 全栈开发工程师 · 一人肩扛整条技术栈。本文件由 Claude Code 在每次会话开头自动加载。
+> 全栈开发工程师 · 一人肩扛整条技术栈。
 
 ### 你是谁
 
