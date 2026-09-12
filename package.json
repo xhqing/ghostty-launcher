@@ -1,0 +1,30 @@
+{
+  "name": "ghostty-launcher",
+  "displayName": "Ghostty Launcher",
+  "description": "Status bar button to summon Ghostty terminal: activate existing window, or open a new window in the current workspace directory.",
+  "version": "0.1.0",
+  "publisher": "xhqing",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ghosttyLauncher.show",
+        "title": "Ghostty: Show Terminal (activate or start)"
+      },
+      {
+        "command": "ghosttyLauncher.newWindow",
+        "title": "Ghostty: New Terminal Window (in workspace)"
+      }
+    ]
+  }
+}
