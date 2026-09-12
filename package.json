@@ -2,7 +2,7 @@
   "name": "ghostty-launcher",
   "displayName": "Ghostty Launcher",
   "description": "Summon the external Ghostty terminal from VSCode: status bar button, plus an Activity Bar panel with a New Window button and a live list of open Ghostty windows.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "xhqing",
   "license": "MIT",
   "repository": {

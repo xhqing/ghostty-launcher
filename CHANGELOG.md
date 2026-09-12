@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0（2026-09-12）
 
 ### 变更（CLAUDE.md 删去「由 Claude Code 自动加载」说明句）
 
