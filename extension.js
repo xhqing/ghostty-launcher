@@ -282,10 +282,13 @@ function activate(context) {
   item.command = 'ghosttyLauncher.show';
   item.show();
 
-  const panel = new WindowsPanel();
-  const provider = vscode.window.registerWebviewViewProvider('ghosttyLauncher.windows', panel);
+  // 主侧边栏（活动栏容器）与副侧边栏容器各注册一个面板实例：同一套 UI，两处同时可用，
+  // 各自独立轮询（只在面板可见时拉列表，见 WindowsPanel.start/stop）
+  const panels = ['ghosttyLauncher.windows', 'ghosttyLauncher.windowsSecondary'].map(
+    (id) => vscode.window.registerWebviewViewProvider(id, new WindowsPanel())
+  );
 
-  context.subscriptions.push(show, newWin, item, provider);
+  context.subscriptions.push(show, newWin, item, ...panels);
 }
 
 function deactivate() {}

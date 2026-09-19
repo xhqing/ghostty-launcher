@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="ghostty-launcher extension icon">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#5B21B6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <g transform="translate(34.46 22.15) scale(18.4615)">
+    <path fill="#ffffff" fill-rule="evenodd" d="M5 11 A7 7 0 0 1 19 11 V19 a2.3334 2.3334 0 0 1 -4.6667 0 a2.3334 2.3334 0 0 1 -4.6667 0 a2.3334 2.3334 0 0 1 -4.6666 0 Z M7.7 10.2 a1.7 1.7 0 1 0 3.4 0 a1.7 1.7 0 1 0 -3.4 0 Z M12.9 10.2 a1.7 1.7 0 1 0 3.4 0 a1.7 1.7 0 1 0 -3.4 0 Z"/>
+  </g>
+</svg>

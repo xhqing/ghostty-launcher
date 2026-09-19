@@ -1,16 +1,17 @@
 {
   "name": "ghostty-launcher",
   "displayName": "Ghostty Launcher",
-  "description": "Summon the external Ghostty terminal from VSCode: status bar button, plus an Activity Bar panel with a New Window button and a live list of open Ghostty windows.",
+  "description": "Summon the external Ghostty terminal from VSCode: status bar button, plus 👻 panels in both the Primary and Secondary Side Bar with a New Window button and a live list of open Ghostty windows.",
   "version": "0.2.0",
   "publisher": "xhqing",
   "license": "MIT",
+  "icon": "assets/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/xhqing/ghostty-launcher.git"
   },
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.104.0"
   },
   "categories": [
     "Other"
@@ -33,17 +34,31 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "ghostty",
+          "id": "ghostty-primary",
+          "title": "Ghostty",
+          "icon": "assets/activitybar.svg"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "ghostty-secondary",
           "title": "Ghostty",
           "icon": "assets/activitybar.svg"
         }
       ]
     },
     "views": {
-      "ghostty": [
+      "ghostty-primary": [
         {
           "type": "webview",
           "id": "ghosttyLauncher.windows",
+          "name": "Ghostty"
+        }
+      ],
+      "ghostty-secondary": [
+        {
+          "type": "webview",
+          "id": "ghosttyLauncher.windowsSecondary",
           "name": "Ghostty"
         }
       ]

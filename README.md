@@ -10,7 +10,7 @@
 
 # Ghostty Launcher
 
-A tiny VSCode extension that summons the external [Ghostty](https://ghostty.org/) terminal from VSCode — one click from the status bar, or from an Activity Bar panel.
+A tiny VSCode extension that summons the external [Ghostty](https://ghostty.org/) terminal from VSCode — one click from the status bar, or from a side panel (available in both the Primary and Secondary Side Bar).
 
 ## Features
 
@@ -18,14 +18,15 @@ A tiny VSCode extension that summons the external [Ghostty](https://ghostty.org/
   - Ghostty is running → activate the existing window (bring to front);
   - Ghostty is not running → launch it, automatically opening the current workspace directory.
 - **Command `Ghostty: New Terminal Window (in workspace)`** — always open a new Ghostty window in the current workspace directory (find it in the Command Palette ⌘⇧P by searching "ghostty").
-- **Activity Bar 👻 panel** — a side panel with:
+- **👻 side panel (one in the Primary Side Bar, one in the Secondary Side Bar — both usable at the same time)** — open it from the 👻 icon in the Activity Bar, or from the 👻 icon in the Secondary Side Bar:
   - a **New Window** button at the top (opens a new Ghostty window in the current workspace directory);
   - a live list of all open Ghostty windows (title + working directory, auto-refreshed every 2 s) — click an entry to bring that window to the front.
 
 ## Requirements
 
 - macOS + [Ghostty](https://ghostty.org/) (`/Applications/Ghostty.app`)
-- The Activity Bar window panel talks to Ghostty via its built-in AppleScript interface, which requires **Ghostty 1.2+** (tested with 1.3.1). Without it, the status bar button and commands still work; only the window list is unavailable.
+- VSCode 1.104+ (the Secondary Side Bar container entry was introduced in 1.104; on older versions the Primary Side Bar panel, status bar button and commands still work)
+- The side panel talks to Ghostty via its built-in AppleScript interface, which requires **Ghostty 1.2+** (tested with 1.3.1). Without it, the status bar button and commands still work; only the window list is unavailable.
 
 ## Why
 

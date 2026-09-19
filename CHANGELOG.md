@@ -9,6 +9,10 @@
 
 ### 新增
 
+- **扩展图标（`assets/icon.png`，256×256 PNG）**：为什么：用户装包后发现扩展详情页（Extensions 面板）无 logo，占位灰块难看——`package.json` 从未声明 `icon` 字段（README 横幅 logo 与活动栏图标都不覆盖这个位置）。改了什么（2026-09-19）：新建 `assets/icon.svg`（512×512、rx=112 圆角方形、品牌素罗兰渐变 #8B5CF6→#5B21B6、居中白色幽灵矢量主体——与活动栏/面板同一套幽灵 glyph，不用 banner 的 emoji，避免字体依赖），rsvg-convert 渲染出 256×256 PNG，`package.json` 增加 `"icon": "assets/icon.png"`；几何实测：四角透明（无棱角）、主体居中（左右留白 64/65、上下 48/49 px）、高度占比 61.7%、眼睛镂空透出渐变。
+
+- **副侧边栏（Secondary Side Bar）同步提供 👻 面板，与主侧边栏（活动栏）同时可用**：为什么：用户要求主侧边栏与副侧边栏要能同时都有 Ghostty 入口——左侧看项目树的同时，副侧边栏也能常驻 Ghostty 窗口列表。改了什么（2026-09-19）：①`package.json` 新增 `viewsContainers.secondarySidebar` 容器（id `ghostty-secondary`，复用同一图标）与对应 webview 视图 `ghosttyLauncher.windowsSecondary`；②`extension.js` 为两个视图各注册一个 `WindowsPanel` 实例（同一套 UI，各自独立轮询、可见才刷新）；③`engines.vscode` 由 `^1.80.0` 提到 `^1.104.0`——`secondarySidebar` 容器位置系 VSCode 1.104 引入（官方源码逐 tag 核实：1.103 无、1.104 有，官方贡献点文档尚未收录该位置；本机 1.136.1 安装包源码内已含该支持），旧版 VSCode 下该字段被忽略、主侧边栏面板不受影响；④双语 README 同步功能描述与版本要求。副侧边栏默认收起，打开后（右侧布局图标或 `Toggle Secondary Side Bar`）即见 👻 图标与面板。⑤主容器 id 定为 `ghostty-primary`（而非沿用 0.2.0 首轮的 `ghostty`）：为什么：本机实测装包后发现活动栏图标不出现，排查为 09-12 首轮 dev 测试时用户把 `ghostty` 容器拖进了副侧边栏，该「容器位置迁移」按 workspace 持久化（`workbench.auxiliarybar.viewContainersWorkspaceState`），重装/升级不会清除，导致新装后主容器仍被还原到副侧边栏、活动栏无图标；容器改名后所有旧位置状态指向不存在的 id 而失效，主容器在各 workspace 均回到默认活动栏位置，无需逐个 workspace 手动移回。
+
 - **活动栏（Activity Bar）👻 面板**：左侧活动栏点开即见——顶部「New Window」按钮 + 所有已打开 Ghostty 窗口的实时列表（标题 + 工作目录，每 2 秒轮询刷新），点击列表项把对应窗口拉到前台（同时激活 Ghostty 应用）。为什么：状态栏按钮只能「激活整个应用」，无法列出并直达具体窗口，用户要不离开 VSCode 就看到并选中各个 Ghostty 窗口。实现走 Ghostty 自带 AppleScript 脚本字典（窗口枚举 / `activate window` / `new window`，需 Ghostty 1.2+，本机 1.3.1 实测全部行为），不需要辅助功能权限；配套新增 `assets/activitybar.svg`（24×24 单色 currentColor、全圆角幽灵造型，几何边界经渲染实测验证）。涉及文件：`package.json`（注册视图容器 + webview 视图）、`extension.js`（JXA 调用层 + WindowsPanel provider）、双语 README 同步功能描述。
 
 ### 变更
