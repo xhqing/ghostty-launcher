@@ -11,3 +11,7 @@ README_cn.md
 CLAUDE.md
 .commit-cache.md
 .gitignore
+
+# 测试与 CI，不需要进 vsix
+.github/**
+test/**

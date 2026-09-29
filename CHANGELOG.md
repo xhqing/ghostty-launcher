@@ -1,5 +1,18 @@
 # Changelog
 
+## 未发布（fix/new-window-reliability 分支 · Issue #1 测试先行）
+
+### 新增（测试体系：Node 内置测试框架 + 首批测试 + CI 门禁）
+
+- **为什么改**：Issue #1（面板 New Window 偶发无反应）要补可观测性、失败可见并消除已知竞态，修复触及 `extension.js` 运行行为、属核心开发，按 dev-workflow 测试先行（测试 Agent 先出题、自跑确认红，开发后实现到绿）。本仓库此前无测试框架、无测试命令、无 CI，测试体系随本次一并建立；出题按 Issue 正文「期望行为」与评论里的接口提示（可测纯逻辑抽到 `lib/ghostty.js` / `media/panel.js`），出题时实现尚不存在。
+- **改了什么**（2026-09-29）：
+  - 新增 `test/ghostty.test.js`（18 用例）：New Window 决策（运行中失败 → 重试一次；两次失败 → 返回 `{ ok:false, error }` 且**绝不回退** `open -na`；未运行 → `open -na --args --working-directory` 冷启动）、激活决策（成功 / 窗口已不存在 / 调用失败）、JXA 脚本生成（列表 / 激活 / 新窗口，含 JSON 转义嵌入）、`shellQuote`、轮询间隔 `LIST_INTERVAL`（2000 → 3000）、失败与成功可观测（`log` 回调，失败不再静默）。
+  - 新增 `test/panel.test.js`（7 用例）：列表 payload 稳定签名 `signatureOf`（相同数据同签名；运行状态 / 窗口数量 / id / 名称 / 目录 / 错误任一变化签名不同——「数据未变不重建 DOM」的防护基础）、状态提示文案 `hintFor`（未运行 / 列表不可用含错误原因 / 无窗口 / 正常无提示）。
+  - `package.json` 新增 `scripts.test`（`node --test test/*.test.js`，零依赖走 Node 内置 `node:test`）与 `scripts.check`（全量 JS 语法检查）。
+  - 新增 `.github/workflows/ci.yml`：`pull_request`（main）+ `push`（main）触发，跑语法检查 + 全量测试；按首次启用顺序，待本分支经 PR 合并进 main 后再开 main 分支保护并设 required。
+  - `.vscodeignore` 排除 `test/**` 与 `.github/**`（不进 vsix）。
+  - 自跑验证：`npm run check` 全过；`npm test` 全红（`lib/ghostty.js` / `media/panel.js` 尚不存在，先红验证断言有效）；另在 `tmp/` 用最小 stub 自检（25/25 全绿，排除测试自身恒红）并做三类变异（不重试 / 回退 open / 签名忽略 running，分别红 3 / 2 / 1 条，排除永真断言）。
+
 ## 0.2.0（2026-09-12）
 
 ### 变更（CLAUDE.md 删去「由 Claude Code 自动加载」说明句）
