@@ -20,13 +20,18 @@ A tiny VSCode extension that summons the external [Ghostty](https://ghostty.org/
 - **Command `Ghostty: New Terminal Window (in workspace)`** — always open a new Ghostty window in the current workspace directory (find it in the Command Palette ⌘⇧P by searching "ghostty").
 - **👻 side panel (one in the Primary Side Bar, one in the Secondary Side Bar — both usable at the same time)** — open it from the 👻 icon in the Activity Bar, or from the 👻 icon in the Secondary Side Bar:
   - a **New Window** button at the top (opens a new Ghostty window in the current workspace directory);
-  - a live list of all open Ghostty windows (title + working directory, auto-refreshed every 2 s) — click an entry to bring that window to the front.
+  - a live list of all open Ghostty windows (title + working directory, auto-refreshed every 3 s) — click an entry to bring that window to the front.
 
 ## Requirements
 
 - macOS + [Ghostty](https://ghostty.org/) (`/Applications/Ghostty.app`)
 - VSCode 1.104+ (the Secondary Side Bar container entry was introduced in 1.104; on older versions the Primary Side Bar panel, status bar button and commands still work)
 - The side panel talks to Ghostty via its built-in AppleScript interface, which requires **Ghostty 1.2+** (tested with 1.3.1). Without it, the status bar button and commands still work; only the window list is unavailable.
+
+## Diagnostics
+
+- Every click (New Window / activating a window) and every Ghostty call (with duration, result and error) is written to the **Ghostty Launcher** channel in the Output panel (View → Output, then pick "Ghostty Launcher" from the dropdown) — the first place to look when a click seems to do nothing.
+- When **New Window** or window activation fails, the panel reports the reason right at the top — including the case where the window no longer exists — instead of failing silently.
 
 ## Why
 
