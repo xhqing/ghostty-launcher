@@ -1,18 +1,38 @@
+'use strict';
+
+/**
+ * Ghostty Launcher 扩展入口：只做 VSCode 侧接线——状态栏按钮、两个面板实例、
+ * Output 日志通道；Ghostty 决策与调用逻辑在 lib/ghostty.js，面板 webview 脚本在
+ * media/panel.js。
+ *
+ * 本文件对应 Issue #1 的期望行为：
+ * 1. 可观测——每次点击、每次 Ghostty 调用（含耗时 / 结果 / 错误）写入 Output 面板的
+ *    「Ghostty Launcher」通道（列表轮询逐次记录，正常一次约 0.4~0.5s）；
+ * 2. 失败可见——New Window / 激活窗口失败时面板上给出明确提示，状态栏与命令路径弹
+ *    错误提示（带 Show Log 按钮）；
+ * 3. 不再静默拉起第二实例——运行中 New Window 失败只重试一次，仍失败就报错，
+ *    绝不回退 open -na（由 lib/ghostty.js 保证）；
+ * 4. 列表渲染——数据未变化不重建 DOM、面板重开先用缓存立即渲染（media/panel.js +
+ *    这里的 lastPayload 缓存）；
+ * 5. 轮询——间隔 3 秒、同一时刻最多一个在途刷新请求（inflight 守卫）。
+ */
+
 const vscode = require('vscode');
-const { exec, execFile } = require('child_process');
+const ghostty = require('./lib/ghostty');
 
-const APP = 'Ghostty.app';
-const PGREP = '/usr/bin/pgrep';
-const OPEN = '/usr/bin/open';
-const OSA = '/usr/bin/osascript';
-const LIST_INTERVAL = 2000; // 面板可见时轮询窗口列表的间隔（毫秒）
-const OSA_TIMEOUT = 5000;
+/** Output 面板通道：所有点击与 Ghostty 调用都写这里，故障时先看它 */
+let output;
 
-/** Ghostty 是否正在运行（进程名为小写 ghostty） */
-function isRunning() {
-  return new Promise((resolve) => {
-    exec(`${PGREP} -x ghostty`, (err, stdout) => resolve(!!stdout.trim()));
-  });
+/** 本地时间戳 HH:MM:SS.mmm */
+function stamp() {
+  const d = new Date();
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+/** 写一行日志（Output 面板打开时实时可见） */
+function log(line) {
+  output?.appendLine(`[${stamp()}] ${line}`);
 }
 
 /** 当前工作区根目录（无工作区时返回 undefined） */
@@ -20,150 +40,107 @@ function workspaceDir() {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
-/** 用户登录 shell（新建窗口时需显式指定，否则 Ghostty 的 surface configuration 会把空 command 当立即退出） */
-function loginShell() {
-  return process.env.SHELL || '/bin/zsh';
+// —— 真实副作用（osascript / open）：注入给 lib/ghostty.js 的决策流程 ——
+
+function runJxa(script) {
+  return ghostty.jxa(script);
 }
 
-/** 执行一段 JXA（AppleScript 的 JavaScript 方言）脚本，resolve stdout 字符串 */
-function jxa(script) {
-  return new Promise((resolve, reject) => {
-    execFile(OSA, ['-l', 'JavaScript', '-e', script], { timeout: OSA_TIMEOUT }, (err, stdout, stderr) => {
-      if (err) reject(new Error((stderr || err.message || '').split('\n')[0].slice(0, 200)));
-      else resolve(stdout.toString());
-    });
+function runOpen(argv) {
+  return ghostty.execFileAsync(ghostty.OPEN, argv);
+}
+
+/** 失败不再静默：弹错误提示 + Show Log 按钮（lib 已把原因写进日志） */
+function reportFailure(error) {
+  vscode.window.showErrorMessage(`Ghostty Launcher: ${error}`, 'Show Log').then((pick) => {
+    if (pick === 'Show Log') output?.show(true);
   });
 }
 
-/** 枚举所有打开的 Ghostty 窗口（走 Ghostty 自带 AppleScript 脚本字典，需要 Ghostty 1.2+）。
- *  返回 { running, windows: [{ id, name, dir }], error }，dir 为窗口当前选中终端的工作目录。
+/**
+ * 面板：顶部 New Window 按钮 + 打开的窗口实时列表（点击行激活对应窗口）。
+ * 主侧边栏与副侧边栏各一个实例，各自独立轮询、各自缓存上次列表。
  */
-async function listWindows() {
-  if (!(await isRunning())) return { running: false, windows: [] };
-  try {
-    const out = await jxa(`
-      (function () {
-        const app = Application("Ghostty");
-        return JSON.stringify(app.windows().map(w => {
-          let dir = "";
-          try { dir = w.selectedTab().focusedTerminal().workingDirectory() || ""; } catch (e) {}
-          return { id: w.id(), name: w.name(), dir: dir };
-        }));
-      })()`);
-    return { running: true, windows: JSON.parse(out) };
-  } catch (e) {
-    return { running: true, windows: [], error: e.message };
-  }
-}
-
-/** 把指定 id 的 Ghostty 窗口拉到前台（同时激活 Ghostty 应用） */
-async function activateWindow(id) {
-  const out = await jxa(`
-    (function () {
-      const app = Application("Ghostty");
-      const w = app.windows().find(x => x.id() === ${JSON.stringify(id)});
-      if (!w) return "notfound";
-      app.activateWindow(w);
-      return "ok";
-    })()`);
-  return out.trim() === 'ok';
-}
-
-/** Ghostty 已在运行时用 AppleScript 新建窗口并落在指定目录。
- *  注意：surface configuration 未显式设置的字段会覆盖为空值，command 必须给登录 shell，
- *  否则新窗口的 shell 立即退出、窗口秒关（实测）。需要 Ghostty 1.2+。
- */
-function newWindowViaAppleScript(dir) {
-  return jxa(`
-    (function () {
-      const app = Application("Ghostty");
-      const cfg = app.newSurfaceConfiguration();
-      cfg.initialWorkingDirectory = ${JSON.stringify(dir || require('os').homedir())};
-      cfg.command = ${JSON.stringify(loginShell())};
-      app.newWindow({ withConfiguration: cfg });
-      return "ok";
-    })()`);
-}
-
-/** 给含空格的参数加引号 */
-function shellQuote(s) {
-  return /[^\w\-.,:=/@]/.test(s) ? `"${s}"` : s;
-}
-
-/** 拉起 Ghostty。
- *  - newWindow=true：始终新窗口，落在当前工作区目录。
- *    运行中走 AppleScript `new window`（`open -na --args` 对运行中实例会拉起第二个进程，
- *    两个实例的窗口互不相通，实测已踩坑）；未运行走 `open -na --args --working-directory`。
- *  - newWindow=false：在跑则激活已有窗口；没跑则带工作区目录启动。
- */
-function summon(newWindow) {
-  const dir = workspaceDir();
-
-  if (!newWindow) {
-    isRunning().then((running) => {
-      if (running) {
-        // 激活已有窗口（-a 对运行中实例会忽略 --args，所以纯激活）
-        exec(`${OPEN} -a ${APP}`);
-        return;
-      }
-      const start = ['-na', APP, '--args'];
-      if (dir) start.push(`--working-directory=${dir}`);
-      exec(`${OPEN} ${start.map(shellQuote).join(' ')}`);
-    });
-    return;
-  }
-
-  isRunning().then((running) => {
-    if (running) {
-      newWindowViaAppleScript(dir).catch(() => {
-        // 旧版 Ghostty（<1.2）没有脚本字典时回退到 open 路径
-        const args = ['-na', APP, '--args'];
-        if (dir) args.push(`--working-directory=${dir}`);
-        exec(`${OPEN} ${args.map(shellQuote).join(' ')}`);
-      });
-      return;
-    }
-    const start = ['-na', APP, '--args'];
-    if (dir) start.push(`--working-directory=${dir}`);
-    exec(`${OPEN} ${start.map(shellQuote).join(' ')}`);
-  });
-}
-
-/** 活动栏 Ghostty 面板：顶部 New Window 按钮 + 打开窗口实时列表，点击列表项激活对应窗口 */
 class WindowsPanel {
-  constructor() {
+  constructor(extensionUri, tag) {
+    this.extensionUri = extensionUri;
+    this.tag = tag; // 'primary' / 'secondary'：日志里区分是哪个面板
     this.view = undefined;
     this.timer = undefined;
+    this.inflight = false; // 在途刷新守卫：同一时刻最多一个
+    this.lastPayload = undefined; // 上次列表数据，面板重开时先拿它立即渲染
+  }
+
+  log(line) {
+    log(`[${this.tag}] ${line}`);
   }
 
   resolveWebviewView(view) {
     this.view = view;
-    view.webview.options = { enableScripts: true };
-    view.webview.html = this.html();
+    view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
+    view.webview.html = this.html(view.webview);
 
-    view.webview.onDidReceiveMessage(async (msg) => {
-      if (msg.type === 'newWindow') {
-        summon(true);
-        setTimeout(() => this.refresh(), 600);
-      } else if (msg.type === 'activate') {
-        try { await activateWindow(msg.id); } catch (e) { /* 窗口可能已关 */ }
-        setTimeout(() => this.refresh(), 400);
-      }
+    view.webview.onDidReceiveMessage((msg) => {
+      this.handleMessage(msg, view).catch((e) => this.log(`消息处理异常：${e.message}`));
     });
-
-    view.onDidChangeVisibility(() => (this.view.visible ? this.start() : this.stop()));
+    view.onDidChangeVisibility(() => (view.visible ? this.start() : this.stop()));
     view.onDidDispose(() => {
       this.stop();
-      this.view = undefined;
+      if (this.view === view) this.view = undefined;
     });
+
+    this.log('面板已加载，开始轮询窗口列表');
     this.start();
   }
 
-  /** 面板可见时每 2 秒刷新一次窗口列表 */
+  async handleMessage(msg, view) {
+    if (msg.type === 'ready') {
+      // webview 就绪：先用缓存列表立即渲染（不给空白窗），再拉一次最新数据
+      this.log(this.lastPayload ? 'webview 就绪，先用缓存列表渲染' : 'webview 就绪（暂无缓存列表）');
+      if (this.lastPayload) this.post({ type: 'list', ...this.lastPayload });
+      this.refresh();
+      return;
+    }
+
+    if (msg.type === 'newWindow') {
+      const dir = workspaceDir();
+      this.log(`点击 New Window（工作区目录：${dir || '无'}）`);
+      const running = await ghostty.isGhosttyRunning();
+      const res = await ghostty.runNewWindow({
+        running,
+        dir,
+        command: ghostty.loginShell(),
+        jxa: runJxa,
+        open: runOpen,
+        log: (line) => this.log(line),
+      });
+      this.post(
+        res.ok
+          ? { type: 'notice', kind: 'info', text: 'New window opened.' }
+          : { type: 'notice', kind: 'error', text: res.error }
+      );
+      // 窗口刚建好时列表接口不一定马上能看到，稍等再刷
+      setTimeout(() => this.refresh(), 600);
+      return;
+    }
+
+    if (msg.type === 'activate') {
+      this.log(`点击窗口行：激活 id=${msg.id}`);
+      const res = await ghostty.runActivate({
+        id: msg.id,
+        jxa: runJxa,
+        log: (line) => this.log(line),
+      });
+      if (!res.ok) this.post({ type: 'notice', kind: 'error', text: res.error });
+      setTimeout(() => this.refresh(), 400);
+    }
+  }
+
+  /** 面板可见时每 LIST_INTERVAL 毫秒刷新一次窗口列表 */
   start() {
     this.stop();
     this.refresh();
-    this.timer = setInterval(() => this.refresh(), LIST_INTERVAL);
+    this.timer = setInterval(() => this.refresh(), ghostty.LIST_INTERVAL);
   }
 
   stop() {
@@ -171,28 +148,60 @@ class WindowsPanel {
     this.timer = undefined;
   }
 
-  async refresh() {
-    if (!this.view?.visible) return;
+  post(message) {
     try {
-      const data = await listWindows();
-      this.view.webview.postMessage({ type: 'list', ...data });
-    } catch (e) { /* 忽略单次失败，下轮重试 */ }
+      this.view?.webview.postMessage(message);
+    } catch (e) {
+      /* 面板已销毁，忽略 */
+    }
   }
 
-  html() {
+  async refresh() {
+    const view = this.view;
+    if (!view || !view.visible) return;
+    if (this.inflight) {
+      this.log('上一次列表刷新还在进行中，跳过本次');
+      return;
+    }
+
+    this.inflight = true;
+    const started = Date.now();
+    try {
+      const data = await ghostty.listWindows();
+      const ms = Date.now() - started;
+      // 逐次记录（含耗时）：轮询日志既是「每次 Ghostty 调用可观测」的要求，也是故障排查时
+      // 判断扩展有没有卡住的心跳证据；正常一次约 0.4~0.5s
+      if (data.error) this.log(`列表刷新失败：${data.error}（running=${data.running}，${ms}ms）`);
+      else this.log(`列表刷新 ok：running=${data.running} windows=${data.windows.length}（${ms}ms）`);
+      this.lastPayload = data;
+      if (this.view === view) this.post({ type: 'list', ...data });
+    } catch (e) {
+      this.log(`列表刷新异常：${e.message}`);
+    } finally {
+      this.inflight = false;
+    }
+  }
+
+  html(webview) {
     const nonce = Math.random().toString(36).slice(2);
-    const ghost = `M5 11 A7 7 0 0 1 19 11 V19 a2.3334 2.3334 0 0 1 -4.6667 0 a2.3334 2.3334 0 0 1 -4.6667 0 a2.3334 2.3334 0 0 1 -4.6666 0 Z M7.7 10.2 a1.7 1.7 0 1 0 3.4 0 a1.7 1.7 0 1 0 -3.4 0 Z M12.9 10.2 a1.7 1.7 0 1 0 3.4 0 a1.7 1.7 0 1 0 -3.4 0 Z`;
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'panel.js'));
     return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}' ${webview.cspSource};">
 <style nonce="${nonce}">
   body { padding: 10px; font-family: var(--vscode-font-family); margin: 0; }
-  .btn { display: block; width: 100%; box-sizing: border-box; padding: 6px 10px; margin-bottom: 10px;
+  .btn { display: block; width: 100%; box-sizing: border-box; padding: 6px 10px; margin-bottom: 8px;
          background: var(--vscode-button-background); color: var(--vscode-button-foreground);
          border: none; border-radius: 3px; font-size: 13px; cursor: pointer; text-align: center; }
   .btn:hover { background: var(--vscode-button-hoverBackground); }
+  .notice { font-size: 12px; line-height: 1.35; padding: 6px 8px; border-radius: 4px; margin-bottom: 8px;
+            word-break: break-word; }
+  .notice.error { color: var(--vscode-inputValidation-errorForeground, var(--vscode-foreground));
+                  background: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.12));
+                  border: 1px solid var(--vscode-inputValidation-errorBorder, transparent); }
+  .notice.info { color: var(--vscode-descriptionForeground); }
   .row { padding: 6px 6px; border-radius: 4px; cursor: pointer; display: flex; gap: 8px; align-items: flex-start; }
   .row:hover { background: var(--vscode-list-hoverBackground); }
   .row svg { flex: none; width: 15px; height: 15px; margin-top: 2px; opacity: 0.85; }
@@ -206,73 +215,49 @@ class WindowsPanel {
 </head>
 <body>
 <button id="new" class="btn">New Window</button>
+<div id="notice" class="notice error" hidden></div>
 <div id="list"></div>
-<div id="hint" class="hint" hidden></div>
-
-<script nonce="${nonce}">
-  const vscode = acquireVsCodeApi();
-  const ghostPath = "${ghost}";
-  const listEl = document.getElementById('list');
-  const hintEl = document.getElementById('hint');
-
-  document.getElementById('new').onclick = () => vscode.postMessage({ type: 'newWindow' });
-
-  function row(w) {
-    const div = document.createElement('div');
-    div.className = 'row';
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p.setAttribute('d', ghostPath);
-    p.setAttribute('fill', 'currentColor');
-    p.setAttribute('fill-rule', 'evenodd');
-    svg.appendChild(p);
-    const txt = document.createElement('div');
-    txt.className = 'txt';
-    const name = document.createElement('div');
-    name.className = 'name';
-    name.textContent = w.name || w.dir || 'Window';
-    txt.appendChild(name);
-    if (w.dir && w.name) {
-      const dir = document.createElement('div');
-      dir.className = 'dir';
-      dir.textContent = w.dir;
-      txt.appendChild(dir);
-    }
-    div.appendChild(svg);
-    div.appendChild(txt);
-    div.title = w.dir || w.name || '';
-    div.onclick = () => vscode.postMessage({ type: 'activate', id: w.id });
-    return div;
-  }
-
-  window.addEventListener('message', (e) => {
-    const m = e.data;
-    if (m.type !== 'list') return;
-    listEl.textContent = '';
-    if (!m.running) {
-      hintEl.hidden = false;
-      hintEl.textContent = 'Ghostty is not running — click New Window to launch it.';
-    } else if (m.error) {
-      hintEl.hidden = false;
-      hintEl.textContent = 'Window list unavailable: ' + m.error;
-    } else if (!m.windows.length) {
-      hintEl.hidden = false;
-      hintEl.textContent = 'No open windows.';
-    } else {
-      hintEl.hidden = true;
-      m.windows.forEach((w) => listEl.appendChild(row(w)));
-    }
-  });
-
-  vscode.postMessage({ type: 'ready' });
-</script>
+<div id="hint" class="hint">Loading open Ghostty windows…</div>
+<script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
   }
 }
 
+/** 状态栏按钮 / 命令面板命令：newWindow=false 激活已有窗口，true 始终新窗口 */
+function summon(newWindow) {
+  const dir = workspaceDir();
+  log(newWindow ? '命令面板：New Terminal Window（始终新窗口）' : '状态栏按钮：唤起 Ghostty');
+  ghostty
+    .isGhosttyRunning()
+    .then((running) => {
+      const run = newWindow ? ghostty.runNewWindow : ghostty.runSummon;
+      return run({
+        running,
+        dir,
+        command: ghostty.loginShell(),
+        jxa: runJxa,
+        open: runOpen,
+        log,
+      });
+    })
+    .then((res) => {
+      if (!res.ok) reportFailure(res.error);
+    })
+    .catch((e) => {
+      log(`✗ 意外异常：${e.message}`);
+      reportFailure(e.message);
+    });
+}
+
 function activate(context) {
+  output = vscode.window.createOutputChannel('Ghostty Launcher');
+  context.subscriptions.push(output);
+  log(
+    `Ghostty Launcher v${context.extension?.packageJSON?.version || '?'} 已激活（VSCode ${vscode.version}，` +
+      `面板轮询间隔 ${ghostty.LIST_INTERVAL}ms）`
+  );
+
   const show = vscode.commands.registerCommand('ghosttyLauncher.show', () => summon(false));
   const newWin = vscode.commands.registerCommand('ghosttyLauncher.newWindow', () => summon(true));
 
@@ -284,9 +269,10 @@ function activate(context) {
 
   // 主侧边栏（活动栏容器）与副侧边栏容器各注册一个面板实例：同一套 UI，两处同时可用，
   // 各自独立轮询（只在面板可见时拉列表，见 WindowsPanel.start/stop）
-  const panels = ['ghosttyLauncher.windows', 'ghosttyLauncher.windowsSecondary'].map(
-    (id) => vscode.window.registerWebviewViewProvider(id, new WindowsPanel())
-  );
+  const panels = [
+    ['ghosttyLauncher.windows', 'primary'],
+    ['ghosttyLauncher.windowsSecondary', 'secondary'],
+  ].map(([id, tag]) => vscode.window.registerWebviewViewProvider(id, new WindowsPanel(context.extensionUri, tag)));
 
   context.subscriptions.push(show, newWin, item, ...panels);
 }

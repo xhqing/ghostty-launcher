@@ -13,6 +13,20 @@
   - `.vscodeignore` 排除 `test/**` 与 `.github/**`（不进 vsix）。
   - 自跑验证：`npm run check` 全过；`npm test` 全红（`lib/ghostty.js` / `media/panel.js` 尚不存在，先红验证断言有效）；另在 `tmp/` 用最小 stub 自检（25/25 全绿，排除测试自身恒红）并做三类变异（不重试 / 回退 open / 签名忽略 running，分别红 3 / 2 / 1 条，排除永真断言）。
 
+### 修复（Issue #1 实现：可观测、失败可见、消除已知竞态）
+
+- **为什么改**：Issue #1「面板 New Window 偶发无反应」的排查结论是「当前无法定位根因」——扩展自身零日志、所有失败路径静默吞掉，当时的 exthost 日志又被轮转删除；同时代码审查列出 4 条已知隐患（列表每 2 秒全量重建 DOM 会吞掉点击、面板重开有空白窗、运行中调用失败会静默回退 `open -na` 拉起第二实例、轮询无在途守卫）。本次按 Issue 的 5 条验收标准补齐实现：故障偶发、无法按需复现，验收以「可观测性 + 消除已知竞态」为准。测试由测试 Agent 先行写好（25 条，见 `test/` 与上节），本次交付实现到全绿。
+- **改了什么**（2026-09-30）：
+  - 新增 `lib/ghostty.js`（不依赖 VSCode 的调用层）：JXA 脚本生成（列表 / 激活 / 新窗口）、`shellQuote`、轮询间隔常量，以及三条决策流程 `runNewWindow` / `runActivate` / `runSummon`——外部副作用（osascript / open / 日志）全部注入，单测注入假实现即可断言行为。关键约束：Ghostty 运行中新建窗口失败**只重试一次**，仍失败返回 `{ok:false,error}`，**绝不回退 `open -na`**（运行中回退会拉起第二个实例，两实例窗口互不相通）；只有确认未运行才走 `open -na --args --working-directory=<dir>` 冷启动。
+  - 新增 `media/panel.js`（从 `extension.js` 内联 HTML 抽出的 webview 端脚本）：`signatureOf` 列表 payload 稳定签名 + `hintFor` 状态提示文案（纯函数段带 `module.exports` 守卫，node 可直接 require），DOM 绑定区只在 webview 环境执行。核心防护：**签名不变就不重建 DOM**，消除「点击落在 mousedown/mouseup 之间赶上列表重建、被吞掉」的竞态。
+  - `extension.js` 重写为接线层：①新增 Output 通道「Ghostty Launcher」，每次点击、每次 Ghostty 调用（含耗时、结果、错误；列表轮询也逐次记录，兼作「扩展是否卡住」的心跳证据）都写日志，失败不再静默；②New Window / 激活窗口失败在面板上直接提示（「窗口已不存在（可能刚被关闭）」/「新窗口创建失败：<原因>」），点按钮后即时显示「Opening a new window…」，状态栏与命令路径失败弹错误提示并带 Show Log 按钮；③面板实例缓存上次列表，webview 重新就绪时先下发缓存立即渲染（消除重开面板的空白窗）；④轮询间隔 2s → 3s，加在途刷新守卫（同一时刻最多一个请求，慢刷新不再叠加调用）；⑤CSP 改为 `script-src 'nonce-…' ${webview.cspSource};`，脚本以外部文件加载（VSCode 官方文档已改为推荐外部脚本：`https://code.visualstudio.com/api/extension-guides/webview`）。
+  - 双语 README 同步：列表刷新间隔 2s → 3s，新增「诊断 / Diagnostics」小节说明 Output 日志通道。
+- **验证**（2026-09-30）：
+  - `npm run check` 全过；`npm test` 25/25 全绿（测试 Agent 先行写的用例，实现前全红）。
+  - 接线冒烟（临时脚本在 `tmp/`，不进仓库）：用假 `vscode` 模块加载扩展 → HTML/CSP/脚本 URI 正常、主副面板各自注册与轮询、`ready` → 列表下发、日志格式正确；用假 DOM 加载 `media/panel.js` → 首次渲染建 DOM、**同数据重复下发不重建**、数据变化才重建、提示文案与点击消息正确。
+  - 真实 Ghostty 全链路（借用用户正在运行的实例，只创建「自退出窗口」，不留残留、不动用户窗口）：列表脚本真实返回可解析（3 个窗口含目录）；运行中新建窗口走 AppleScript 成功（`ok` 断言、302ms、落点目录实测正确、新窗口随后出现在列表中）；`runActivate` 成功（116ms）与 notfound 失败分支（用户可见原因 + 写入日志）均实测。
+  - 排查记录（供后续参考）：pi 的 bash 沙箱里 `pgrep` 看不到沙箱外的进程（对用户已运行的 Ghostty 返回假阴性；同一命令在 launchd 上下文正常）——只影响沙箱内的调试脚本，扩展跑在 VSCode 扩展宿主、不受该限制；期间在沙箱内误起的第二个 Ghostty 实例已清理（该实例无窗口，未动用户实例）。**警示：临时脚本不要带 `quit app "Ghostty"` 之类的收尾动作——用户的实例里有活着的会话。**
+
 ## 0.2.0（2026-09-12）
 
 ### 变更（CLAUDE.md 删去「由 Claude Code 自动加载」说明句）
