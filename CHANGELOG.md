@@ -1,6 +1,6 @@
 # Changelog
 
-## 未发布（fix/new-window-reliability 分支 · Issue #1 测试先行）
+## 0.2.1（2026-09-30）
 
 ### 新增（测试体系：Node 内置测试框架 + 首批测试 + CI 门禁）
 
