@@ -1,5 +1,26 @@
 # Changelog
 
+## 未发布
+
+### 新增（测试：Issue #5「New Window 建出的窗口不置前」先行用例）
+
+- **为什么改**：用户 2026-09-30 在 v0.2.1 正式版实测报缺陷（Issue #5）——面板点 New Window 建出的窗口不置前（Ghostty 在后台时停在原前台应用后面，需手动切换）。修复触及 `lib/ghostty.js` 的 JXA 脚本生成与 `runNewWindow` 判定，属核心开发，按 dev-workflow 测试先行：测试 Agent 在功能分支先出题、自跑确认红，开发再实现到绿。
+- **改了什么**（2026-09-30）：`test/ghostty.test.js` 新增 6 条用例（文件总 24 条），并定下协议——窗口创建成功但激活失败时，脚本返回可区分状态 `"activate-failed"`；`runNewWindow` 收到它按成功处理（`ok:true`）、不重试（重试会建出第二个窗口）、不回退 `open -na`，并写一条警告日志（可观测、不静默）；只有 `newWindow` 本身失败仍抛出、走上层「重试一次 → `{ok:false,error}`」路径。覆盖：①脚本在 `newWindow` 之后对刚创建的窗口对象调用 `activateWindow`（同时保留既有 JSON 转义契约）；②在 Node 沙箱里真实执行生成的脚本、断言控制流（激活抛错返回 `"activate-failed"`；创建抛错不得伪装成成功）；③`runNewWindow` 对「已创建但激活失败」的成功判定与警告日志；④非约定状态仍按创建失败重试报错（不放宽失败判定）。
+- **自跑**（2026-09-30，先红）：`npm run check` 全过；`npm test` 31 条中 4 红 27 绿——4 红全为新增的 Issue #5 行为用例（实现尚不存在），新增的 2 条防回归守卫用例与既有 18 条保持绿。
+- **自检**（2026-09-30，`tmp/` 沙箱，不进仓库）：按 Issue 修复方向在 `tmp/` 改一份 lib 副本对跑，24/24 全绿（排除永真断言）；四类变异（脚本不激活 / 创建失败吞成激活失败 / 不识别 `activate-failed` / 放宽成功判定）分别红 3 / 1 / 1 / 1 条，均被对应用例抓住。
+
+### 修复（Issue #5：New Window 建出的窗口不置前）
+
+- **为什么改**：用户 2026-09-30 在 v0.2.1 正式版实测报缺陷（Issue #5）——面板点 New Window 没有正常切换窗口：窗口确实建出来了，但没切到最上层（Ghostty 在后台时新窗口停在原前台应用后面，需手动切）。根因（源码级定位，ghostty 分叉仓库）：AppleScript `new window` handler（`AppDelegate+AppleScript.swift:171` → `TerminalController.newWindow(...)`，其内部 `TerminalController.swift:305` 只有 `DispatchQueue.main.async { c.showWindow(self) }`）**全程没有 `NSApp.activate`**；而 `activate window`（`ScriptWindow.swift:178`）才是 `makeKeyAndOrderFront` + `NSApp.activate(ignoringOtherApps: true)` 的置前路径（面板「点窗口行激活」用的就是它，实测有效）。修复触及 `lib/ghostty.js` 的 JXA 脚本生成与 `runNewWindow` 判定，按 dev-workflow 测试先行（测试已先出题并自跑见红，见上节）。
+- **改了什么**（2026-09-30）：
+  - `lib/ghostty.js` 的 `buildNewWindowScript`：拿到 `newWindow({ withConfiguration: cfg })` 的返回值后调用 `app.activateWindow(win)` 把新窗口置前（同时激活 Ghostty）；**激活失败不抛出**、返回可区分状态 `"activate-failed"`——抛出去会被上层当成创建失败去重试，反而多建一个窗口。
+  - `runNewWindow`：识别 `"activate-failed"` → 按成功处理（`ok:true`）、不重试、不回退 `open -na`，并写一条警告日志（`⚠ 新窗口已创建，但置前激活失败…`，可观测、不静默）；只有 `newWindow` 本身失败仍走「重试一次 → `{ok:false,error}`」；非约定返回状态仍按创建失败处理（不放宽失败判定）。
+  - 双语 README 同步：New Window 按钮描述补上「新窗口会切到最前（同时激活 Ghostty）」——此前只承诺「落在当前工作区目录」。
+- **验证**（2026-09-30）：
+  - 本地门禁：`npm run check` 全过；`npm test` **31/31 全绿**（含测试 Agent 先写的 4 条 Issue #5 用例，实现前红、实现后绿）。
+  - 真机验证（走生产代码路径，借用户正在运行的实例，创建后即关闭）：`runNewWindow` 返回 `{ok:true}`、日志为「✓ 新窗口创建成功（第 1 次，287ms…）」而**不是** `activate-failed`，说明真实 AppleScript 里 `activateWindow` 接受 `newWindow` 刚返回的窗口对象；随后新窗口确为 `frontWindow()`；测试窗口已关闭、无残留。
+  - 边界说明（最终确认留给用户实测）：验证时 Ghostty 恰在前台，无法在不抢用户焦点的情况下复现「Ghostty 在后台」的差异；但置前效果与「点窗口行激活」共用同一 `activate window` 实现（日常用着有效），后台场景以「VSCode 在前台点 New Window」实测为准。
+
 ## 0.2.1（2026-09-30）
 
 ### 新增（测试体系：Node 内置测试框架 + 首批测试 + CI 门禁）

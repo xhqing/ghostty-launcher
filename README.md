@@ -19,7 +19,7 @@ A tiny VSCode extension that summons the external [Ghostty](https://ghostty.org/
   - Ghostty is not running → launch it, automatically opening the current workspace directory.
 - **Command `Ghostty: New Terminal Window (in workspace)`** — always open a new Ghostty window in the current workspace directory (find it in the Command Palette ⌘⇧P by searching "ghostty").
 - **👻 side panel (one in the Primary Side Bar, one in the Secondary Side Bar — both usable at the same time)** — open it from the 👻 icon in the Activity Bar, or from the 👻 icon in the Secondary Side Bar:
-  - a **New Window** button at the top (opens a new Ghostty window in the current workspace directory);
+  - a **New Window** button at the top (opens a new Ghostty window in the current workspace directory and brings it to the front);
   - a live list of all open Ghostty windows (title + working directory, auto-refreshed every 3 s) — click an entry to bring that window to the front.
 
 ## Requirements
