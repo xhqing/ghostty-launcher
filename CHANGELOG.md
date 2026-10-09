@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5（2026-10-09）
+
+### 变更
+
+- **同步 Atlas 子项目清单（zcode-cli、cmux-launcher 短期搁置标注）**：随附的 FullStackEngineerAgent CLAUDE.md 全文更新——「目前在手项目」与「当前子项目清单」两处标注两者「自 2026-10-09 起短期搁置」。
+
 ## 0.2.4（2026-10-09）
 
 ### 变更
