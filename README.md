@@ -32,6 +32,7 @@ A tiny VSCode extension that summons the external [Ghostty](https://ghostty.org/
 
 - Every click (New Window / activating a window) and every Ghostty call (with duration, result and error) is written to the **Ghostty Launcher** channel in the Output panel (View → Output, then pick "Ghostty Launcher" from the dropdown) — the first place to look when a click seems to do nothing.
 - When **New Window** or window activation fails, the panel reports the reason right at the top — including the case where the window no longer exists — instead of failing silently.
+- Bringing a window to the front is always **verified after the fact**: if the first attempt does not take effect, it retries via `open -a Ghostty`; if both attempts fail, the panel says so ("could not bring it to the front — switch with ⌘-Tab") instead of pretending success. macOS focus-stealing protection can occasionally refuse a programmatic activation; in that case the window usually exists already, it just stays in the background.
 
 ## Why
 
