@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.4（2026-10-09）
+
+### 变更
+
+- **同步 Atlas 子项目清单（加入 mp4-player）**：随附的 FullStackEngineerAgent CLAUDE.md 全文更新，加入新登记的 mp4-player（「目前在手项目」与「子项目清单」两处）。
+
 ## 0.2.3（2026-10-09）
 
 ### 新增（测试：Issue #8「置前被 macOS 静默否决」先行用例）
