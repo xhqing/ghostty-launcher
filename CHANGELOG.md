@@ -1,5 +1,26 @@
 # Changelog
 
+## 未发布
+
+### 新增（测试：Issue #8「置前被 macOS 静默否决」先行用例）
+
+- **为什么改**：用户 2026-10-09 实测报缺陷（Issue #8）——VSCode 里点面板 **New Window** 界面无反应（没弹窗、也没切前台），但扩展日志全绿（`✓ 新窗口创建成功`）、窗口列表计数 +1：窗口建出来了、没被置前。根因：置前请求在 AppKit 之下被 macOS 否决（系统日志 `CPS: Rejecting expired request`——请求来源时间早于该应用最近一次被激活时间即拒，失败那次 15 条拒绝逐条对应 12 次点击），而 `activate window` 底层 `NSApp.activate(ignoringOtherApps:)` **异步无返回值**、拿不到拒收结果，所以日志全绿而实际没置前；属条件性否决、表现为偶发不置前（同日再试、人刚操作过 Ghostty 时同一路径放行）。这不是 Issue #5 修复的回归，而是它的覆盖缺口。修复触及 `lib/ghostty.js` 与 `extension.js` 的置前判定，按 dev-workflow 测试先行：测试 Agent 在功能分支先出题、自跑确认红，开发再实现到绿。
+- **改了什么**（2026-10-09）：`test/ghostty.test.js` 新增 10 条用例（文件总 34 条），并定下协议——新增 `ensureForeground({ isFrontmost, activateApp, log, wait })`：置前不再只信 AppleScript 返回值，而是实测「是否已在前台」；已在前台 → `{ ok:true, method:'none' }` 且不调 `activateApp`；不在前台 → 走 LaunchServices 兜底（真机 `open -a Ghostty.app`）一次并复查，复查在前台 → `{ ok:true, method:'launchservices' }`，仍不在前台 → `{ ok:false, method:'launchservices', error }`（可展示的中文原因）；查询 / 兜底动作抛错都不得向上抛（不 reject），且每次查询前调用注入的 `wait`；成功 / 兜底 / 失败各写可辨识日志（不静默）。新增 `foregroundNoticeText({ created, error })`：面板与状态栏复用的失败提示文案（含「新窗口已创建」「未能切到前台」「⌘-Tab」指引与传入原因）。覆盖：①已在前台不多余动作；②兜底后成功；③兜底后仍失败（不谎报成功）；④置前查询抛错（不 reject、记日志、继续兜底）；⑤复查抛错（报失败而非谎报）；⑥兜底动作抛错（不 reject）；⑦`wait` 每次查询前调用；⑧⑨⑩提示文案两分支与 error 缺省边界。不改 Issue #5 锁定的既有契约（创建成功 `ok:true`、失败只重试一次、绝不回退 `open -na`）。
+- **自跑**（2026-10-09，先红）：`npm run check` 全过；`npm test` 41 条中 10 红 31 绿——10 红全为新增 Issue #8 用例（实现尚不存在，`ghostty.ensureForeground / foregroundNoticeText is not a function`），既有 31 条保持绿。
+- **自检**（2026-10-09，`tmp/` 沙箱，不进仓库）：按接口契约在 `tmp/` 写参考实现拼接 lib 副本对跑，34/34 全绿（排除永真断言）；四类变异（已在前台也调兜底 / 兜底失败谎报成功 / 查询异常向上抛 / 文案误称窗口已创建）各自恰好被对应用例抓住（各红 1 条）。
+
+### 修复（Issue #8：置前不再只信脚本返回值——实测结果 + LaunchServices 兜底 + 失败可见）
+
+- **为什么改**：同节上条的先行用例要落地到实现。根因（2026-10-09 实测）：`activate window` 底层 `NSApp.activate(ignoringOtherApps:)` 异步无返回值，macOS 防抢焦点策略在 AppKit 之下静默否决时（系统日志 `CPS: Rejecting expired request`）扩展一无所知——于是「日志全绿、屏幕没变化」。本次让扩展自己实测结果，不再把「请求已发出」当成「已经在前台」。
+- **改了什么**（2026-10-09）：
+  - `lib/ghostty.js` 新增两个导出（纯逻辑，外部副作用全部注入）：`ensureForeground({ isFrontmost, activateApp, log, wait })` —— 先实测是否已在前台（是 → `{ ok:true, method:'none' }`，不做多余动作）；不在就换 LaunchServices 路径兜底一次（真机 `open -a Ghostty.app`）并复查（成功 → `{ ok:true, method:'launchservices' }`；仍不在 → `{ ok:false, method:'launchservices', error }`）；查询与兜底分别出错都不向上抛，只如实写日志与返回值；每次查询前调注入的 `wait`（给系统处理激活请求留时间，避免刚发出就查的假阴性）。`foregroundNoticeText({ created, error })` —— 面板与状态栏复用的失败文案，`created` 决定说不说「新窗口已创建」（不得把「建了但没上来」与「没建」混为一谈）。
+  - `extension.js`：新增 `isGhosttyFrontmost()`（问 Ghostty 自己 `frontmost`，走已有的 AE 通道、不需辅助功能权限）、`activateExistingApp()`（`open -a`，绝不用 `-n`）、`settle()`（250ms 等待）与 `ensureForegroundNow()`；**三条路径全部接上实测**——面板 New Window（失败时提示「新窗口已创建，但未能切到前台…」）、列表行激活（失败时提示未能切到前台）、状态栏 👻 / 命令面板（失败时写日志 + 警告提示）。失败不再静默，也不再让用户对着「日志说成功、屏幕没动静」发呆。
+  - 双语 README 诊断节各补一条：置前每次都实测结果、失败会明确提示并给 ⌘-Tab 指引。
+- **验证**（2026-10-09）：
+  - 本地门禁：`npm run check` 全过；`npm test` **41/41 全绿**（含测试 Agent 先写的 10 条 Issue #8 用例，实现前红、实现后绿；既有 31 条保持绿）。
+  - 真机验证（走真实依赖：真 osascript 查询 + 真 `open -a`）：①「已在前台」路径——`isFrontmost()` 返回 true → `ensureForeground` 直接 `{ ok:true, method:'none' }`、无副作用；②「后台兜底」路径——先把 Ghostty 挤到后台（`isFrontmost()` 实测 false）→ 日志出现「↻ … LaunchServices 兜底一次：open -a Ghostty.app」→ 复查 true → `{ ok:true, method:'launchservices' }`，系统日志同步显示该激活请求被接受（`Making … the front process`）。
+  - 边界说明：macOS 防抢焦点拒绝激活的条件（请求来源时间早于该应用最近一次被激活时间）至今未找到可稳定复现的方法，所以「两条路径都被拒」的真实分支以单测锁定（兜底后仍不在前台 → `ok:false` + 可展示原因 + 警告日志），真机验证覆盖前两条路径。
+
 ## 0.2.2（2026-10-01）
 
 ### 新增（测试：Issue #5「New Window 建出的窗口不置前」先行用例）

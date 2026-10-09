@@ -14,11 +14,18 @@
  *    绝不回退 open -na（由 lib/ghostty.js 保证）；
  * 4. 列表渲染——数据未变化不重建 DOM、面板重开先用缓存立即渲染（media/panel.js +
  *    这里的 lastPayload 缓存）；
- * 5. 轮询——间隔 3 秒、同一时刻最多一个在途刷新请求（inflight 守卫）。
+ * 5. 轮询——间隔 3 秒、同一时刻最多一个在途刷新请求（inflight 守卫）；
+ * 6. 置前结果实测 + 兜底（Issue #8）——`activate window` 底层 NSApp.activate 异步无返回值，
+ *    macOS 防抢焦点策略会在下面静默否决（系统日志 `CPS: Rejecting expired request`），
+ *    所以每次「要求它到前台」的动作后都实测一次是否真的在前台；不在就换 LaunchServices
+ *    路径兜底再试，两次都不行就明确告知用户（不静默失败）。
  */
 
 const vscode = require('vscode');
 const ghostty = require('./lib/ghostty');
+
+/** 轮询窗口列表之外，实测置前结果前的等待时长：给系统处理激活请求留出时间 */
+const FOREGROUND_SETTLE_MS = 250;
 
 /** Output 面板通道：所有点击与 Ghostty 调用都写这里，故障时先看它 */
 let output;
@@ -48,6 +55,41 @@ function runJxa(script) {
 
 function runOpen(argv) {
   return ghostty.execFileAsync(ghostty.OPEN, argv);
+}
+
+/**
+ * Ghostty 是否已经在前台（Issue #8 的实测手段）。
+ * 问 Ghostty 自己（AppleScript 标准套件的 frontmost），走的是已有的 AE 通道，
+ * 不需要辅助功能权限；比 `activate window` 的返回值可靠——后者只是「请求已发出」。
+ */
+function isGhosttyFrontmost() {
+  return ghostty.jxa('Application("Ghostty").frontmost()').then((out) => String(out).trim() === 'true');
+}
+
+/** 兜底激活：只激活已有实例（`-a`，绝不用 `-na`——那会拉起第二个 Ghostty） */
+function activateExistingApp() {
+  return runOpen(['-a', ghostty.APP]);
+}
+
+/** 等一段时间再实测：NSApp.activate 是异步的，发出去就查会得到假阴性 */
+function settle(ms = FOREGROUND_SETTLE_MS) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 置前结果实测 + LaunchServices 兜底（Issue #8 期望行为 1～3）。
+ * lib 侧是纯逻辑（注入依赖），这里只负责把真实副作用接上。
+ *
+ * @param {(line:string)=>void} logLine 写日志（调用方决定带不带面板 tag）
+ * @returns {Promise<{ ok:boolean, method:'none'|'launchservices', error?:string }>}
+ */
+function ensureForegroundNow(logLine) {
+  return ghostty.ensureForeground({
+    isFrontmost: isGhosttyFrontmost,
+    activateApp: activateExistingApp,
+    wait: () => settle(),
+    log: logLine,
+  });
 }
 
 /** 失败不再静默：弹错误提示 + Show Log 按钮（lib 已把原因写进日志） */
@@ -114,11 +156,21 @@ class WindowsPanel {
         open: runOpen,
         log: (line) => this.log(line),
       });
-      this.post(
-        res.ok
-          ? { type: 'notice', kind: 'info', text: 'New window opened.' }
-          : { type: 'notice', kind: 'error', text: res.error }
-      );
+      if (!res.ok) {
+        this.post({ type: 'notice', kind: 'error', text: res.error });
+      } else {
+        // 窗口建出来了不代表看得到它：实测是否真到了前台，没到就兜底一次（Issue #8）
+        const fg = await ensureForegroundNow((line) => this.log(line));
+        this.post(
+          fg.ok
+            ? { type: 'notice', kind: 'info', text: 'New window opened.' }
+            : {
+                type: 'notice',
+                kind: 'error',
+                text: ghostty.foregroundNoticeText({ created: true, error: fg.error }),
+              }
+        );
+      }
       // 窗口刚建好时列表接口不一定马上能看到，稍等再刷
       setTimeout(() => this.refresh(), 600);
       return;
@@ -131,7 +183,18 @@ class WindowsPanel {
         jxa: runJxa,
         log: (line) => this.log(line),
       });
-      if (!res.ok) this.post({ type: 'notice', kind: 'error', text: res.error });
+      if (!res.ok) {
+        this.post({ type: 'notice', kind: 'error', text: res.error });
+      } else {
+        const fg = await ensureForegroundNow((line) => this.log(line));
+        if (!fg.ok) {
+          this.post({
+            type: 'notice',
+            kind: 'error',
+            text: ghostty.foregroundNoticeText({ created: false, error: fg.error }),
+          });
+        }
+      }
       setTimeout(() => this.refresh(), 400);
     }
   }
@@ -241,8 +304,19 @@ function summon(newWindow) {
         log,
       });
     })
-    .then((res) => {
-      if (!res.ok) reportFailure(res.error);
+    .then(async (res) => {
+      if (!res.ok) {
+        reportFailure(res.error);
+        return;
+      }
+      // 状态栏 / 命令面板这两条路径同样实测置前结果（Issue #8：不只信脚本返回值）
+      const fg = await ensureForegroundNow(log);
+      if (!fg.ok) {
+        log(`⚠ 未能自动切到前台（method=${fg.method}）：${fg.error}`);
+        vscode.window.showWarningMessage(
+          ghostty.foregroundNoticeText({ created: newWindow, error: fg.error })
+        );
+      }
     })
     .catch((e) => {
       log(`✗ 意外异常：${e.message}`);
