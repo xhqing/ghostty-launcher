@@ -12,6 +12,11 @@ CLAUDE.md
 .commit-cache.md
 .gitignore
 
+# Agent 进驻关联（身份软链接与项目级 pi 配置，含本机绝对路径），不进 vsix
+AGENTS.md
+.pi
+.pi/**
+
 # 测试与 CI，不需要进 vsix
 .github/**
 test/**
