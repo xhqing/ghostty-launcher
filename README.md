@@ -40,6 +40,6 @@ The built-in terminal (xterm.js) struggles with high-throughput output. If you a
 
 ## License & Attribution
 
-Copyright (c) 2026 xhqing <https://github.com/xhqing>. Released under the [MIT License](LICENSE.md).
+Copyright (c) 2026 xhqing and contributors. Released under the [MIT License](LICENSE.md).
 
 Attribution: if you use or reference this project, please keep the copyright notice and credit the source: [ghostty-launcher](https://github.com/xhqing/ghostty-launcher).
