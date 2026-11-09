@@ -40,6 +40,6 @@ VSCode 一键唤起 Ghostty 终端的小扩展——状态栏一点，或侧边�
 
 ## 版权与署名
 
-版权所有 (c) 2026 xhqing <https://github.com/xhqing>，基于 [MIT 许可证](LICENSE.md)发布。
+版权所有 (c) 2026 xhqing and contributors，基于 [MIT 许可证](LICENSE.md)发布。
 
 署名方式：使用或引用本项目时，请保留版权声明并注明来源：[ghostty-launcher](https://github.com/xhqing/ghostty-launcher)。
