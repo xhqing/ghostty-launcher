@@ -1,12 +1,12 @@
 # ghostty-launcher
 
-> FullStackEngineerAgent（Atlas）名下的子项目 · 本项目规则本体
+> dev-agent（Atlas）名下的子项目 · 本项目规则本体
 
 VSCode 状态栏扩展：点击 👻 一键唤起外部 Ghostty 终端——在跑则激活已有窗口，未跑则带当前工作区目录启动。零依赖、仅 macOS。
 
 ## 归谁负责
 
-本项目由 **Atlas**（FullStackEngineerAgent）负责维护。改动范围跨出本项目时，先向 Atlas 说明，不自行扩张改动面。
+本项目由 **Atlas**（dev-agent）负责维护。改动范围跨出本项目时，先向 Atlas 说明，不自行扩张改动面。
 
 ## 你的角色
 
